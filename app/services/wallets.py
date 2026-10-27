@@ -1,36 +1,50 @@
 from fastapi import HTTPException
+
+from app.database import SessionLocal
 from app.repository import wallet as wallet_repository
 from app.schemas import CreateWalletRequest
 
 def get_wallet(wallet_name: str | None = None):
-    if wallet_name is None:
-        wallets = wallet_repository.get_all_wallets()
-        return {"total_balance": sum(wallets.values())}
+    db = SessionLocal()
 
-    if not wallet_repository.is_wallet_exists(wallet_name):
-        raise HTTPException(
-            status_code=404,
-            detail=f"Wallet '{wallet_name}' not found"
-        )
+    try:
+        if wallet_name is None:
+            wallets = wallet_repository.get_all_wallets(db)
+            return {"total_balance": sum(w.amount for w in wallets)}
 
-    balance = wallet_repository.get_wallet_balance_by_name(wallet_name)
+        if not wallet_repository.is_wallet_exists(db, wallet_name):
+            raise HTTPException(
+                status_code=404,
+                detail=f"Wallet '{wallet_name}' not found"
+            )
 
-    return {
-        "Wallet": wallet_name,
-        "balance:": balance
-    }
+        balance = wallet_repository.get_wallet_balance_by_name(db, wallet_name)
+
+        return {
+            "Wallet": wallet_name,
+            "balance:": balance
+        }
+    finally:
+        db.close()
 
 def create_wallet(wallet: CreateWalletRequest):
-    if wallet_repository.is_wallet_exists(wallet.name):
-        raise HTTPException(
-            status_code=400,
-            detail=f"Wallet '{wallet.name}' already exists"
-        )
+    db = SessionLocal()
 
-    new_balance = wallet_repository.create_wallet(wallet.name, wallet.initial_balance)
+    try:
+        if wallet_repository.is_wallet_exists(db, wallet.name):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Wallet '{wallet.name}' already exists"
+            )
 
-    return {
-        "message": f"Wallet '{wallet.name}' created",
-        "wallet": wallet.name,
-        "balance": new_balance
-    }
+        wallet = wallet_repository.create_wallet(db, wallet.name, wallet.initial_balance)
+
+        db.commit()
+
+        return {
+            "message": f"Wallet '{wallet.name}' created",
+            "wallet": wallet.name,
+            "balance": wallet.amount
+        }
+    finally:
+        db.close()
